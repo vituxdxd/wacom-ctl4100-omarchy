@@ -99,7 +99,9 @@ símbolo). O projeto Ghidra reutilizado está em `/tmp/opencode/ghidra_wacom`.
 
 **[OBS]** O PID `0x0375` citado no pedido não aparece na base libwacom nem no
 descritor. Os IDs reais da linha CTL-4100WL são `0x0376/0x0377` (primeira
-geração) e `0x03C5/0x03C6` (refresh). O driver aceita todos.
+geração) e `0x03C5/0x03C6` (refresh). O daemon abre os três PIDs USB
+(`0374/0376/03C5`); os PIDs Bluetooth são reconhecidos no relatório, mas não
+implementados.
 
 ### 2.2 Descritor de relatório
 

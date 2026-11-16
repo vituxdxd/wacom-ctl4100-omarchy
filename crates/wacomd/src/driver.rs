@@ -16,7 +16,7 @@ use hidapi::{HidApi, HidDevice};
 use wacom_proto::config::{self, Action, Config, EffectiveConfig, MouseAction, ScreenSelection};
 use wacom_proto::hid::{
     feature_pen_scan, parse_input, InputReport, PenReport, FEATURE_WACOM_MODE, PRESSURE_MAX,
-    SUPPORTED_PIDS, VENDOR_ID,
+    USB_PIDS, VENDOR_ID,
 };
 use wacom_proto::ipc::{layout_of, DeviceMode, Event, Monitor, Status, Telemetry};
 use wacom_proto::transform::{apply_precision, to_uinput, Mapping, PixelRect};
@@ -185,7 +185,7 @@ impl Driver {
         let found = self
             .api
             .device_list()
-            .find(|d| d.vendor_id() == VENDOR_ID && SUPPORTED_PIDS.contains(&d.product_id()))
+            .find(|d| d.vendor_id() == VENDOR_ID && USB_PIDS.contains(&d.product_id()))
             .cloned();
         let Some(info) = found else {
             return;

@@ -26,6 +26,10 @@ pub const SUPPORTED_PIDS: [u16; 5] = [
     PID_INTUOS_S_WL_BT_ALT,
 ];
 
+/// PIDs the userspace driver can actually open. Bluetooth transports use a
+/// different packet size and feature set and are left to the kernel.
+pub const USB_PIDS: [u16; 3] = [PID_INTUOS_S, PID_INTUOS_S_WL_USB, PID_INTUOS_S_WL_USB_ALT];
+
 /// Active area in device units (100 units/mm, 2540 lpi).
 pub const TABLET_WIDTH: u32 = 15_200;
 pub const TABLET_HEIGHT: u32 = 9_500;

@@ -16,7 +16,7 @@ pub use config::{Action, Config, EffectiveConfig, MappingConfig, MouseAction, Pe
 pub use hid::{
     parse_input, BatteryReport, InputReport, PadReport, PenReport, PID_INTUOS_S,
     PID_INTUOS_S_WL_BT, PID_INTUOS_S_WL_BT_ALT, PID_INTUOS_S_WL_USB, PID_INTUOS_S_WL_USB_ALT,
-    PRESSURE_MAX, SUPPORTED_PIDS, TABLET_HEIGHT, TABLET_WIDTH, VENDOR_ID,
+    PRESSURE_MAX, SUPPORTED_PIDS, TABLET_HEIGHT, TABLET_WIDTH, USB_PIDS, VENDOR_ID,
 };
 pub use ipc::{DeviceMode, Event, Monitor, Request, Status, Telemetry};
 pub use pressure::{CurveLut, CurvePoints, PressureCurve};

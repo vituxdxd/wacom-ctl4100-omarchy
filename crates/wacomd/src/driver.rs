@@ -204,11 +204,11 @@ impl Driver {
             .unwrap_or_else(|| "Wacom Intuos S (CTL-4100)".into());
         self.serial = device.get_serial_number_string().ok().flatten();
         // Leave mouse/HID mode and enable the Wacom report stream.
-        match device.send_feature_report(&FEATURE_WACOM_MODE) {
+        match send_feature(&device, &FEATURE_WACOM_MODE) {
             Ok(()) => {
                 self.mode = DeviceMode::Wacom;
                 thread::sleep(Duration::from_millis(40));
-                if let Err(e) = device.send_feature_report(&feature_pen_scan(true)) {
+                if let Err(e) = send_feature(&device, &feature_pen_scan(true)) {
                     eprintln!("wacomd: pen scan feature report failed: {e}");
                 }
             }
@@ -692,6 +692,23 @@ fn build_stylus() -> io::Result<VirtualDevice> {
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
     }
     builder.build()
+}
+
+/// The official driver retries feature reports with a short delay.
+fn send_feature(device: &HidDevice, report: &[u8]) -> Result<(), hidapi::HidError> {
+    let mut last = None;
+    for attempt in 0..3 {
+        match device.send_feature_report(report) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = Some(e);
+                if attempt < 2 {
+                    thread::sleep(Duration::from_millis(50));
+                }
+            }
+        }
+    }
+    Err(last.expect("at least one attempt"))
 }
 
 fn key_event(code: KeyCode, down: bool) -> InputEvent {

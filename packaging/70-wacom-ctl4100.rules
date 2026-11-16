@@ -1,12 +1,14 @@
-# CTL-4100: unbind the in-kernel wacom driver so wacomd is the only consumer.
-# hidraw stays available even with no HID driver bound.
-ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:0374.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
-ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:0376.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
-ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:03C5.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
+# Keep the in-kernel wacom driver bound: this kernel removes the hidraw node
+# when the HID driver is unbound. wacomd reads hidraw and grabs the kernel's
+# evdev nodes (EVIOCGRAB) so pen/pad events are not delivered twice.
 
-# Read/write access for the daemon (report descriptor + feature reports).
+# hidraw access for wacomd.
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="037[467]", MODE="0660", GROUP="input", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="03c[56]", MODE="0660", GROUP="input", TAG+="uaccess"
+
+# Kernel evdev nodes for the tablet (wacomd grabs these exclusively).
+KERNEL=="event*", SUBSYSTEM=="input", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="037[467]", TAG+="uaccess"
+KERNEL=="event*", SUBSYSTEM=="input", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="03c[56]", TAG+="uaccess"
 
 # Virtual stylus / macro devices. uaccess gives the logged-in seat user an ACL,
 # so no `input` group membership or re-login is required.

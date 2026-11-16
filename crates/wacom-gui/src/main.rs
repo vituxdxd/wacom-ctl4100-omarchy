@@ -4,13 +4,13 @@ mod client;
 mod panels;
 
 use std::collections::VecDeque;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
 use egui::{Color32, Key, RichText};
 use wacom_proto::config::{Action, Config, Modifier, Profile};
-use wacom_proto::ipc::{Event, Status, Telemetry};
+use wacom_proto::ipc::{Event, Request, Status, Telemetry};
 use wacom_proto::EffectiveConfig;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,6 +41,7 @@ pub enum CaptureTarget {
 
 pub struct App {
     rx: Receiver<client::UiEvent>,
+    tx: Sender<Request>,
     pub connected: bool,
     pub error: Option<String>,
     pub status: Option<Status>,
@@ -69,8 +70,10 @@ impl App {
         style.spacing.item_spacing = egui::vec2(10.0, 8.0);
         style.spacing.button_padding = egui::vec2(10.0, 6.0);
         cc.egui_ctx.set_style(style);
+        let (tx, rx) = client::spawn();
         Self {
-            rx: client::spawn_reader(),
+            tx,
+            rx,
             connected: false,
             error: None,
             status: None,
@@ -128,6 +131,9 @@ impl App {
                     self.error = Some(message);
                 }
                 client::UiEvent::Event(_) => {}
+                client::UiEvent::Error(message) => {
+                    self.error = Some(message);
+                }
                 client::UiEvent::Disconnected(message) => {
                     self.connected = false;
                     self.error = Some(message);
@@ -151,12 +157,8 @@ impl App {
         let Some(cfg) = self.config.clone() else {
             return;
         };
-        match client::set_config(cfg) {
-            Ok(cfg) => {
-                self.config = Some(cfg);
-                self.error = None;
-            }
-            Err(e) => self.error = Some(e),
+        if self.tx.send(Request::SetConfig(cfg)).is_err() {
+            self.error = Some("IPC worker stopped".into());
         }
     }
 
@@ -224,8 +226,12 @@ impl App {
             },
         );
         self.mark_dirty();
-        if let Err(e) = client::pin_profile(Some(app.clone())) {
-            self.error = Some(e);
+        if self
+            .tx
+            .send(Request::PinProfile(Some(app.clone())))
+            .is_err()
+        {
+            self.error = Some("IPC worker stopped".into());
         }
         self.profile_choice = Some(app);
     }
@@ -239,7 +245,7 @@ impl App {
                     .inner_margin(egui::Margin::symmetric(16, 12)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.vertical(|ui| {
                         ui.label(
                             RichText::new("Wacom Intuos S")
@@ -253,7 +259,7 @@ impl App {
                                 .color(muted()),
                         );
                     });
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
                     let (text, color) = if self.connected {
                         ("daemon online", Color32::from_rgb(90, 200, 130))
                     } else {
@@ -270,50 +276,59 @@ impl App {
                     if self.radial {
                         badge(ui, "radial menu", accent());
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Radial menu").clicked() {
-                            self.radial = true;
-                            self.radial_focus = true;
-                        }
-                        ui.add_space(6.0);
-                        let mut choice = self.profile_choice.clone();
-                        let selected = choice.clone().unwrap_or_else(|| "Follow focus".to_string());
-                        egui::ComboBox::from_id_salt("profile")
-                            .selected_text(selected)
-                            .width(170.0)
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut choice, None, "Follow focus");
-                                if let Some(cfg) = &self.config {
-                                    for key in cfg.profiles.keys() {
-                                        ui.selectable_value(&mut choice, Some(key.clone()), key);
-                                    }
-                                }
-                            });
-                        if choice != self.profile_choice {
-                            if let Err(e) = client::pin_profile(choice.clone()) {
-                                self.error = Some(e);
-                            }
-                            self.profile_choice = choice;
-                        }
-                        if let Some(app) = self
-                            .status
-                            .as_ref()
-                            .and_then(|s| s.app_class.as_ref())
-                            .filter(|app| {
-                                self.config
-                                    .as_ref()
-                                    .map(|c| c.profile_for(app).is_none())
-                                    .unwrap_or(false)
-                            })
-                        {
-                            if ui.small_button(format!("+ {app}")).clicked() {
-                                create_profile = Some(app.clone());
-                            }
-                        }
-                        ui.label(RichText::new("Profile").small().color(muted()));
-                    });
                 });
-                ui.add_space(8.0);
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Profile").small().color(muted()));
+                    let mut choice = self.profile_choice.clone();
+                    let selected = choice.clone().unwrap_or_else(|| "Follow focus".to_string());
+                    egui::ComboBox::from_id_salt("profile")
+                        .selected_text(selected)
+                        .width(160.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut choice, None, "Follow focus");
+                            if let Some(cfg) = &self.config {
+                                for key in cfg.profiles.keys() {
+                                    ui.selectable_value(&mut choice, Some(key.clone()), key);
+                                }
+                            }
+                        });
+                    if choice != self.profile_choice {
+                        if self.tx.send(Request::PinProfile(choice.clone())).is_err() {
+                            self.error = Some("IPC worker stopped".into());
+                        }
+                        self.profile_choice = choice;
+                    }
+                    if let Some(app) = self
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.app_class.as_ref())
+                        .filter(|app| {
+                            self.config
+                                .as_ref()
+                                .map(|c| c.profile_for(app).is_none())
+                                .unwrap_or(false)
+                        })
+                    {
+                        if ui.small_button(format!("+ {app}")).clicked() {
+                            create_profile = Some(app.clone());
+                        }
+                    }
+                    if ui.button("Radial menu").clicked() {
+                        self.radial = true;
+                        self.radial_focus = true;
+                    }
+                    if let Some(status) = &self.status {
+                        let app = status.app_class.as_deref().unwrap_or("—");
+                        let profile = status.active_profile.as_deref().unwrap_or("global");
+                        ui.label(
+                            RichText::new(format!("{profile} · {app}"))
+                                .small()
+                                .color(muted()),
+                        );
+                    }
+                });
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     for tab in [Tab::Pen, Tab::Keys, Tab::Mapping, Tab::Diagnostics] {
                         let selected = self.tab == tab;
@@ -326,24 +341,13 @@ impl App {
                                         Color32::TRANSPARENT
                                     })
                                     .corner_radius(egui::CornerRadius::same(7))
-                                    .min_size(egui::vec2(104.0, 30.0)),
+                                    .min_size(egui::vec2(96.0, 30.0)),
                             )
                             .clicked()
                         {
                             self.tab = tab;
                         }
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Some(status) = &self.status {
-                            let app = status.app_class.as_deref().unwrap_or("—");
-                            let profile = status.active_profile.as_deref().unwrap_or("global");
-                            ui.label(
-                                RichText::new(format!("{profile}  ·  {app}"))
-                                    .small()
-                                    .color(muted()),
-                            );
-                        }
-                    });
                 });
             });
         if let Some(app) = create_profile {
@@ -463,8 +467,8 @@ impl App {
                 );
             });
         if let Some(action) = chosen {
-            if let Err(e) = client::run_action(action) {
-                self.error = Some(e);
+            if self.tx.send(Request::RunAction(action)).is_err() {
+                self.error = Some("IPC worker stopped".into());
             }
             self.radial = false;
         }
@@ -521,7 +525,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 720.0])
             .with_min_inner_size([780.0, 560.0])
-            .with_title("Wacom Intuos S (CTL-4100)"),
+            .with_title("Wacom Intuos S (CTL-4100)")
+            .with_app_id("wacom-gui"),
         ..Default::default()
     };
     eframe::run_native(

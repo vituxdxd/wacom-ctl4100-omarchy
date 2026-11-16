@@ -15,7 +15,7 @@ assume que `input:tablet:output` está vazio.
 ## Consequências
 
 - Um único dispositivo funciona em qualquer arranjo de monitores.
-- A resolução física (100 unidades/mm) não é declarada nos eixos; ela aparece
-  na telemetria e na GUI.
+- O libinput exige resolução não-zero nos eixos X/Y para aceitar o tablet;
+  declaramos 216/345 para que ele reporte 152 × 95 mm.
 - Se o usuário configurar `input:tablet:output`, o compositor reescala e o
   mapeamento fica relativo — por isso o README pede para deixar vazio.

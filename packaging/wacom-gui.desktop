@@ -7,4 +7,5 @@ Icon=input-tablet
 Terminal=false
 Categories=Settings;HardwareSettings;
 Keywords=wacom;tablet;pen;intuos;ctl-4100;
+StartupWMClass=wacom-gui
 StartupNotify=true

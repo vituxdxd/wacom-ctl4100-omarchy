@@ -46,12 +46,15 @@ pub const REPORT_RAW: u8 = 0xac;
 /// Size of a pen report including the report ID.
 pub const PEN_REPORT_LEN: usize = 27;
 
-/// Bit positions inside the pen status byte (payload byte 0).
+/// Bit positions inside the pen status byte (payload byte 0), verified against
+/// captured CTL-4100 reports (see `docs/RE_REPORT_CTL4100.md` §2.3).
 pub const PEN_TIP: u8 = 1 << 0; // usage 0x42 TipSwitch
 pub const PEN_BARREL: u8 = 1 << 1; // usage 0x44 BarrelSwitch -> BTN_STYLUS
 pub const PEN_BARREL2: u8 = 1 << 2; // usage 0x5A BarrelSwitch2 -> BTN_STYLUS2
-pub const PEN_IN_RANGE: u8 = 1 << 5; // usage 0x32 InRange
-pub const PEN_ERASER: u8 = 1 << 6; // vendor usage 0x36 (eraser tool)
+/// Vendor state set during hover and tip contact (usage 0x32 in the descriptor).
+pub const PEN_AUX: u8 = 1 << 5;
+/// Set while the pen is inside the active area (usage 0x36 in the descriptor).
+pub const PEN_IN_RANGE: u8 = 1 << 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PenReport {
@@ -75,8 +78,10 @@ impl PenReport {
     pub fn barrel2(&self) -> bool {
         self.status & PEN_BARREL2 != 0
     }
+    /// The CTL-4100 ships with the LP-1100K, which has no eraser. Captured
+    /// reports never carry an invert bit in this status byte.
     pub fn eraser(&self) -> bool {
-        self.status & PEN_ERASER != 0
+        false
     }
     pub fn in_range(&self) -> bool {
         self.status & PEN_IN_RANGE != 0
@@ -270,6 +275,43 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         };
         assert_eq!((r.level, r.charging), (55, true));
+    }
+
+    #[test]
+    fn decodes_captured_hover_report() {
+        // Real CTL-4100 hover: status 0x40, X=0x1b93, Y=0x0d5b, no pressure.
+        let buf = [
+            0x10, 0x40, 0x93, 0x1b, 0x00, 0x5b, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let r = match parse_input(&buf).unwrap() {
+            InputReport::Pen(p) => p,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert!(r.in_range());
+        assert!(!r.tip());
+        assert!(!r.barrel());
+        assert!(!r.eraser());
+        assert_eq!((r.x, r.y), (0x1b93, 0x0d5b));
+        assert_eq!(r.pressure, 0);
+    }
+
+    #[test]
+    fn decodes_captured_tip_report() {
+        // Real CTL-4100 tip contact: status 0x61, X=0x23e9, Y=0x18f9,
+        // pressure 0x00ab = 171.
+        let buf = [
+            0x10, 0x61, 0xe9, 0x23, 0x00, 0xf9, 0x18, 0x00, 0xab, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x12, 0x12, 0x66, 0x83, 0x0b, 0x62, 0x08, 0x10, 0x00, 0x62, 0x08,
+        ];
+        let r = match parse_input(&buf).unwrap() {
+            InputReport::Pen(p) => p,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert!(r.in_range());
+        assert!(r.tip());
+        assert_eq!((r.x, r.y), (0x23e9, 0x18f9));
+        assert_eq!(r.pressure, 171);
     }
 
     #[test]

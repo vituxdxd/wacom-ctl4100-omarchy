@@ -9,8 +9,12 @@ torna qualquer bug um risco de tela azul e dificulta o desenvolvimento.
 
 ## Decisão
 
-Ler o hidraw e criar dispositivos virtuais via `/dev/uinput`. A regra udev
-desvincula o `wacom` do kernel apenas para os PIDs da CTL-4100.
+Ler o hidraw e criar dispositivos virtuais via `/dev/uinput`. O driver
+`wacom` do kernel permanece ligado (neste kernel o hidraw desaparece quando o
+driver HID é desvinculado). O kernel também é dono da inicialização: reenviar
+`02 02`/`0D 00` pelo hidraw pode pausar o stream, então o daemon é passivo. Ele
+dá `EVIOCGRAB` nos eventos evdev do kernel para não entregar a caneta duas
+vezes.
 
 ## Consequências
 
@@ -18,4 +22,7 @@ desvincula o `wacom` do kernel apenas para os PIDs da CTL-4100.
 - Precisamos reimplementar init, parsing e mapeamento — e assumir o custo de
   manter isso.
 - Outras mesas Wacom continuam usando o driver do kernel.
-- Se o `wacom` do kernel não for desvinculado, há eventos duplicados.
+- Sem o `EVIOCGRAB`, há eventos duplicados; o grab é liberado ao parar o
+  daemon, devolvendo o controle ao driver do kernel.
+- O grab exige acesso de leitura aos `/dev/input/event*`; a regra udev usa
+  `uaccess` para isso.

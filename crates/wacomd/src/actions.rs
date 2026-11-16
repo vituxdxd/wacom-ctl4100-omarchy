@@ -132,8 +132,8 @@ impl ActionRunner {
         rel.insert(RelativeAxisCode::REL_HWHEEL);
 
         let device = VirtualDevice::builder()?
-            .name("Wacom Intuos S (CTL-4100) Pad")
-            .input_id(InputId::new(BusType::BUS_VIRTUAL, 0x056a, 0x0374, 1))
+            .name("CTL-4100 Userspace Pad")
+            .input_id(InputId::new(BusType::BUS_VIRTUAL, 0x1209, 0x0002, 1))
             .with_keys(&keys)?
             .with_relative_axes(&rel)?
             .build()?;

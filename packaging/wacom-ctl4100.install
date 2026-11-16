@@ -9,8 +9,9 @@ Enable the daemon:
   sudo modprobe uinput
   systemctl --user enable --now wacomd
 
-The udev rule unbinds the in-kernel `wacom` driver for this tablet only, so
-pen events are not duplicated. Plug the tablet after installation.
+wacomd keeps the in-kernel `wacom` driver bound but grabs its evdev nodes
+exclusively, so pen events are not delivered twice. Plug the tablet after
+installation.
 
 If wacomd reports permission denied on /dev/uinput or /dev/hidraw*:
   sudo usermod -aG input "$USER"

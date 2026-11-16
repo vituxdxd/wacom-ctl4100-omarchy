@@ -14,10 +14,7 @@ use evdev::{
 };
 use hidapi::{HidApi, HidDevice};
 use wacom_proto::config::{self, Action, Config, EffectiveConfig, MouseAction, ScreenSelection};
-use wacom_proto::hid::{
-    feature_pen_scan, parse_input, InputReport, PenReport, FEATURE_WACOM_MODE, PRESSURE_MAX,
-    USB_PIDS, VENDOR_ID,
-};
+use wacom_proto::hid::{parse_input, InputReport, PenReport, PRESSURE_MAX, USB_PIDS, VENDOR_ID};
 use wacom_proto::ipc::{layout_of, DeviceMode, Event, Monitor, Status, Telemetry};
 use wacom_proto::transform::{apply_precision, to_uinput, Mapping, PixelRect};
 use wacom_proto::CurveLut;
@@ -53,6 +50,9 @@ pub struct Driver {
     telemetry: Telemetry,
     pen: PenState,
     pad_keys: u8,
+    kernel_grabs: Vec<evdev::Device>,
+    grabbed_paths: std::collections::HashSet<PathBuf>,
+    last_grab_attempt: Instant,
     precision: bool,
     scroll_mode: bool,
     scroll_click: bool,
@@ -133,6 +133,9 @@ impl Driver {
             telemetry: Telemetry::default(),
             pen: PenState::default(),
             pad_keys: 0,
+            kernel_grabs: Vec::new(),
+            grabbed_paths: std::collections::HashSet::new(),
+            last_grab_attempt: Instant::now() - Duration::from_secs(5),
             precision: false,
             scroll_mode: false,
             scroll_click: false,
@@ -157,6 +160,10 @@ impl Driver {
 
             if self.device.is_none() && self.last_open_attempt.elapsed() >= Duration::from_secs(1) {
                 self.try_open();
+            }
+            if self.last_grab_attempt.elapsed() >= Duration::from_secs(1) {
+                self.grab_kernel_inputs();
+                self.last_grab_attempt = Instant::now();
             }
 
             if let Some(device) = &self.device {
@@ -203,31 +210,50 @@ impl Driver {
             .flatten()
             .unwrap_or_else(|| "Wacom Intuos S (CTL-4100)".into());
         self.serial = device.get_serial_number_string().ok().flatten();
-        // Leave mouse/HID mode and enable the Wacom report stream.
-        match send_feature(&device, &FEATURE_WACOM_MODE) {
-            Ok(()) => {
-                self.mode = DeviceMode::Wacom;
-                thread::sleep(Duration::from_millis(40));
-                if let Err(e) = send_feature(&device, &feature_pen_scan(true)) {
-                    eprintln!("wacomd: pen scan feature report failed: {e}");
-                }
-            }
-            Err(e) => {
-                self.mode = DeviceMode::Unknown;
-                eprintln!("wacomd: Wacom mode switch failed: {e}");
-            }
-        }
+        // The in-kernel wacom driver owns mode initialization. Sending the
+        // same feature reports again (notably 0x0d) can pause the report
+        // stream, so wacomd is deliberately passive on hidraw.
+        self.mode = DeviceMode::Wacom;
         eprintln!(
             "wacomd: connected {} (056a:{:04x})",
             self.product,
             info.product_id()
         );
         self.device = Some(device);
+        self.grab_kernel_inputs();
         self.publish();
+    }
+
+    /// Keep the kernel `wacom` driver bound (it owns the hidraw node) but take
+    /// its evdev nodes exclusively so pen/pad events are not duplicated.
+    fn grab_kernel_inputs(&mut self) {
+        for (path, mut device) in evdev::enumerate() {
+            let id = device.input_id();
+            if id.vendor() != VENDOR_ID || !USB_PIDS.contains(&id.product()) {
+                continue;
+            }
+            let name = device.name().unwrap_or_default().to_string();
+            if name != "Wacom Intuos S Pen" && name != "Wacom Intuos S Pad" {
+                continue;
+            }
+            if self.grabbed_paths.contains(&path) {
+                continue;
+            }
+            match device.grab() {
+                Ok(()) => {
+                    eprintln!("wacomd: grabbed kernel input {name} ({})", path.display());
+                    self.grabbed_paths.insert(path);
+                    self.kernel_grabs.push(device);
+                }
+                Err(e) => eprintln!("wacomd: cannot grab {name} ({}): {e}", path.display()),
+            }
+        }
     }
 
     fn disconnect(&mut self) {
         self.release_all();
+        self.kernel_grabs.clear();
+        self.grabbed_paths.clear();
         self.device = None;
         self.mode = DeviceMode::Unknown;
         self.pen = PenState::default();
@@ -673,42 +699,33 @@ fn build_stylus() -> io::Result<VirtualDevice> {
         keys.insert(key);
     }
     let mut builder = VirtualDevice::builder()?
-        .name("Wacom Intuos S (CTL-4100) Pen")
-        .input_id(InputId::new(BusType::BUS_USB, VENDOR_ID, 0x0374, 1))
+        .name("CTL-4100 Userspace Pen")
+        .input_id(InputId::new(BusType::BUS_VIRTUAL, 0x1209, 0x0001, 1))
         .with_keys(&keys)?;
-    // Emitted coordinates are layout pixels normalized to 0..=32767, so no
-    // physical resolution is claimed on the axes.
+    // libinput rejects tablet devices whose X/Y axes have resolution 0.
+    // 100 units/mm is the CTL-4100's physical resolution (2540 lpi); the
+    // emitted values themselves are layout-normalized 0..=32767.
     for code in [
         AbsoluteAxisCode::ABS_X,
         AbsoluteAxisCode::ABS_Y,
         AbsoluteAxisCode::ABS_PRESSURE,
     ] {
-        let max = if code == AbsoluteAxisCode::ABS_PRESSURE {
+        let pressure = code == AbsoluteAxisCode::ABS_PRESSURE;
+        let max = if pressure {
             i32::from(PRESSURE_MAX)
         } else {
             32_767
         };
-        let info = AbsInfo::new(0, 0, max, 0, 0, 0);
+        // Match the real 152 x 95 mm active area over the 0..=32767 range.
+        let resolution = match code {
+            AbsoluteAxisCode::ABS_X => 216, // 32767 / 152 mm
+            AbsoluteAxisCode::ABS_Y => 345, // 32767 / 95 mm
+            _ => 0,
+        };
+        let info = AbsInfo::new(0, 0, max, 0, 0, resolution);
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
     }
     builder.build()
-}
-
-/// The official driver retries feature reports with a short delay.
-fn send_feature(device: &HidDevice, report: &[u8]) -> Result<(), hidapi::HidError> {
-    let mut last = None;
-    for attempt in 0..3 {
-        match device.send_feature_report(report) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                last = Some(e);
-                if attempt < 2 {
-                    thread::sleep(Duration::from_millis(50));
-                }
-            }
-        }
-    }
-    Err(last.expect("at least one attempt"))
 }
 
 fn key_event(code: KeyCode, down: bool) -> InputEvent {

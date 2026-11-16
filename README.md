@@ -16,9 +16,14 @@ descritor HID de hardware real.
 - `wacom-gui` — app egui: caneta, ExpressKeys, mapeamento e diagnóstico.
 - `wacom-proto` — parser HID, curvas de pressão, transformação afim, config.
 
-**Não testado em hardware nesta máquina** (a CTL-4100 não estava conectada).
-O relatório separa explicitamente o que foi observado no binário/descritor do
-que é implementação nossa (curvas preset, matemática de mapeamento).
+**Testado em hardware real em 2026-11-16** (CTL-4100 USB `056a:0374`):
+ponteiro, pressão, botões laterais e as 4 ExpressKeys funcionando. O teste
+revelou e corrigiu três detalhes que não aparecem no binário macOS: o bit de
+in-range é `0x40` (não `0x20`), o libinput exige resolução não-zero nos eixos
+do tablet virtual, e o hidraw morre se o driver `wacom` do kernel for
+desvinculado — por isso o daemon mantém o kernel ligado e usa `EVIOCGRAB`.
+O relatório separa o que foi observado do que é implementação nossa (presets
+de curva, matemática de mapeamento).
 
 ## Hardware suportado
 
@@ -45,9 +50,19 @@ systemctl --user enable --now wacomd
 Se o `wacomd` reclamar de permissão em `/dev/uinput` ou no hidraw, aí sim:
 `sudo usermod -aG input "$USER"` e saia/entre na sessão.
 
-O pacote instala a regra udev que dá acesso ao hidraw e **desvincula** o driver
-`wacom` do kernel apenas para esta mesa (evita eventos duplicados). O driver do
-kernel continua disponível para outras mesas Wacom.
+O `wacomd` mantém o driver `wacom` do kernel ligado (o hidraw só existe
+enquanto um driver HID está vinculado). A inicialização (`02 02`, modo Wacom,
+taxa de pacotes) é feita pelo driver do kernel; o daemon **não envia feature
+reports** para não pausar o stream. Ele lê o hidraw e dá **EVIOCGRAB** nos nós
+evdev dessa mesa. Assim a caneta não gera eventos duplicados.
+Ao parar o daemon, os grabs são liberados e o driver do kernel volta a
+funcionar sozinho.
+
+O stylus virtual se identifica como `1209:0001` (`CTL-4100 Userspace Pen`) e
+declara os eixos com resolução de 216/345 unidades (152 × 95 mm sobre
+`0..32767`); sem resolução não-zero o libinput ignora o tablet. O `wacom-gui`
+usa IPC assíncrono, então salvar configuração ou trocar perfil não congela a
+janela.
 
 > Se você tiver `input:tablet:output` configurado no Hyprland, deixe-o vazio
 > (`input:tablet:output =`). O `wacomd` faz o mapeamento por conta própria e
@@ -103,12 +118,14 @@ cargo test --workspace
 
 ## Limitações conhecidas
 
-- Sem teste em hardware nesta sessão; ver §7 do relatório.
+- Testado em hardware; ver §7 do relatório para o que foi observado e o que
+  continua inferido.
 - A curva de pressão usa Bézier + LUT de 32 amostras, como o driver oficial,
   mas os pontos exatos dos presets não foram recuperados.
 - Tilt é decodificado e exposto na telemetria, mas não emitido: a CTL-4100
   (OAK) não reporta tilt no caminho interno do driver oficial.
-- O eraser é inferido do bit vendor `0x36`; a LP-1100K não tem borracha.
+- A LP-1100K não tem borracha; o bit `0x36` é o in-range e não há bit de
+  eraser nos reports capturados.
 - Bluetooth (pacotes de 361 bytes) não é implementado; use o cabo USB.
 - O modo Pan/Scroll usa o movimento da caneta como roda e o toque como clique
   esquerdo.

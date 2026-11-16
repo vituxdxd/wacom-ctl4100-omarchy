@@ -141,8 +141,8 @@ Payload de 26 bytes (o buffer do hidraw tem 27, incluindo o Report ID):
 | 0 | 1 | `BarrelSwitch` (`0x44`) | 1 = botão lateral inferior |
 | 0 | 1 | `BarrelSwitch2` (`0x5A`) | 1 = botão lateral superior |
 | 0 | 2 | constante | — |
-| 0 | 1 | `InRange` (`0x32`) | 1 = caneta na área |
-| 0 | 1 | vendor `0x36` | interpretado como eraser (não usado na LP-1100K) |
+| 0 | 1 | vendor (`0x32`) | setado em hover e com a ponta tocando; não usado |
+| 0 | 1 | `InRange` (`0x36`) | 1 = caneta na área (verificado em captura) |
 | 0 | 1 | constante | — |
 | 1–3 | 24 | `X` LE | 0…15200 (100 unidades/mm) |
 | 4–6 | 24 | `Y` LE | 0…9500 |
@@ -155,6 +155,18 @@ Payload de 26 bytes (o buffer do hidraw tem 27, incluindo o Report ID):
 
 **[OBS]** O descritor fixa `Logical Maximum 15200` para X, `9500` para Y e
 `4095` para pressão.
+
+**[OBS]** Captura real da CTL-4100 (`hidraw`, 1.496 reports de 27 bytes):
+
+```text
+hover (0x40): 10 40 93 1b 00 5b 0d 00 00 00 00 00 00 00 00 00 3f ...
+tip   (0x61): 10 61 e9 23 00 f9 18 00 ab 00 00 00 00 00 00 00 12 ...
+```
+
+O bit `0x40` (bit 6) é o indicador de proximidade; `0x20` (bit 5) aparece
+durante hover/tip mas não é eraser. O bit `0x01` correlaciona exatamente com
+pressão > 0. A LP-1100K não tem eraser: não há bit de inversão nesse byte.
+Isso corrige a leitura inicial do descritor, que atribuía `InRange` ao bit 5.
 **[OBS]** `CGD16StylusTransducer::HandleTransducerData` (0x10023C642) lê a
 pressão em `packet[8] | packet[9] << 8`, exatamente o offset 7–8 do payload,
 e descarta tilt quando `IS_OAK(sensorID)` é verdadeiro.
@@ -432,23 +444,35 @@ Decisões:
 2. **uinput com eixos normalizados no layout** (`0…32767`) em vez de unidades
    nativas: permite mapear para um monitor/região sem depender da configuração
    `input:tablet:output` do Hyprland. O daemon exige que essa opção esteja
-   vazia (mapeamento por todo o layout).
+   vazia (mapeamento por todo o layout). Os eixos declaram resolução 216/345
+   para que o libinput enxergue 152 × 95 mm (ver §7).
 3. **Dois dispositivos virtuais**: stylus (`ABS_X/Y/PRESSURE`, `BTN_TOOL_PEN`,
-   `BTN_TOOL_RUBBER`, `BTN_TOUCH`, `BTN_STYLUS/2`) e teclado/mouse de macros
-   (teclas, botões, REL_WHEEL/HWHEEL).
-4. **`INPUT_PROP_POINTER`, não `DIRECT`**: a CTL-4100 não é uma tela; `DIRECT`
-   faria o libinput tratá-la como touchscreen e quebraria o mapeamento.
+   `BTN_TOUCH`, `BTN_STYLUS/2`) e teclado/mouse de macros (teclas, botões,
+   REL_WHEEL/HWHEEL). Sem `BTN_TOOL_RUBBER`: a LP-1100K não tem borracha.
+4. **Sem `INPUT_PROP_DIRECT`**: a CTL-4100 não é uma tela; `DIRECT` faria o
+   libinput tratá-la como touchscreen e quebraria o mapeamento.
 5. **Perfil por app** escutando `.socket2.sock` (`activewindow>>classe,título`)
    e lendo `hyprctl monitors -j` a cada 5 s.
-6. **Ações internas** (precisão, troca de monitor, radial) ficam no daemon;
+6. **Init passivo no Linux**: o driver `wacom` do kernel já envia `02 02` e
+   mantém o modo Wacom. O daemon não reenvia feature reports (o `0D 00`
+   reenviado pausou o stream na CTL-4100 real); ele só lê o hidraw.
+7. **Ações internas** (precisão, troca de monitor, radial) ficam no daemon;
    teclas/cliques/shell vão para o dispositivo de macros.
+8. **Identidade virtual única** (`1209:0001`, `CTL-4100 Userspace Pen`): o
+   Hyprland deduplicava um stylus virtual com o VID/PID/nome do kernel e
+   ignorava seus eventos. O grab do kernel é feito por nome (`Wacom Intuos S
+   Pen/Pad`) e não afeta o device virtual.
+9. **GUI com IPC assíncrono**: salvar configuração, fixar perfil e disparar
+   ações não bloqueiam a thread do egui; o Hyprland não mostra mais
+   "Application Not Responding" quando o daemon reinicia.
 
 ---
 
 ## 6. Integração Arch / Omarchy
 
-- **udev**: desvincula `wacom` do kernel só para `056A:0374/0376/03C5`,
-  libera hidraw para o grupo `input` e uinput para o grupo `input`.
+- **udev**: mantém o `wacom` do kernel ligado (o hidraw depende dele), libera
+  hidraw e os eventos evdev da mesa via `uaccess` e libera uinput. O daemon dá
+  `EVIOCGRAB` nos eventos do kernel para evitar eventos duplicados.
 - **systemd --user**: `wacomd.service` em `graphical-session.target`.
 - **módulo**: `/etc/modules-load.d/wacom-ctl4100.conf` com `uinput`.
 - **Hyprland**: monitores via `hyprctl monitors -j`; foco via socket2;
@@ -460,17 +484,27 @@ Decisões:
 
 ## 7. Limites, incertezas e o que não foi verificado
 
-1. **Sem hardware nesta sessão.** O descritor veio de um dump público de
-   hardware real (linuxwacom/wacom-hid-descriptors, contribuição de 2018 e
-   2020); os comandos de feature vieram do binário oficial e do kernel Linux.
-   Não houve captura `evtest`/`hidraw` local.
+1. **Hardware testado em 2026-11-16.** CTL-4100 USB `056a:0374`, serial
+   `0KH00R2105402`. O driver `wacom` do kernel criou `hidraw5` + event21/22;
+   o daemon abriu o hidraw e deu `EVIOCGRAB` nos dois evdev. Foram capturados
+   1.496 reports de 27 bytes. O teste validou ponteiro, pressão, botões
+   laterais e as 4 ExpressKeys. Correções vindas do teste:
+   - in-range é o bit `0x40` (o `0x20` é estado vendor);
+   - não há bit de eraser nos reports da LP-1100K;
+   - o libinput ignora tablets com resolução zero em X/Y (216/345);
+   - desvincular o `wacom` do kernel remove o hidraw; a solução é manter o
+     driver ligado e usar `EVIOCGRAB`;
+   - o stylus virtual precisa de nome/VID/PID únicos para o Hyprland não
+     deduplicar com o tablet do kernel;
+   - o `wacom-gui` precisou de IPC assíncrono para não congelar a UI.
 2. **Presets de pressão**: arquitetura Bézier + LUT confirmada; pontos exatos
    dos presets Soft/Firm não recuperados.
 3. **Duplo clique**: distância/tempo padrão são nossos (10 px / 400 ms).
 4. **Tilt**: o caminho OAK do driver oficial não usa tilt; nosso parser lê os
    campos, mas não os emite no uinput.
-5. **Eraser**: bit vendor `0x36`; a LP-1100K não tem borracha. Se esse bit
-   tiver outro significado em firmware diferente, o comportamento muda.
+5. **Eraser**: a LP-1100K não tem borracha e os reports capturados não têm
+   bit de inversão; o bit `0x36` é o in-range. Um firmware diferente pode
+   mudar isso.
 6. **Bluetooth**: o modo BT usa pacotes de 361 bytes e feature `0x82`; não
    implementado. O projeto cobre USB.
 7. **`0xAC` raw**: observado, não implementado.
@@ -480,7 +514,14 @@ Decisões:
    compositor reescala o dispositivo e o mapeamento do daemon fica relativo.
    Deixe vazio.
 10. **Desempenho**: o daemon lê com timeout de 5 ms e publica telemetria a
-    20 Hz; a taxa real da mesa é limitada pelo firmware.
+    20 Hz. Nas capturas a mesa entregou ~135 reports/s; a taxa é limitada
+    pelo firmware.
+11. **Menu radial**: é um overlay dentro da janela do `wacom-gui` (com foco
+    forçado), não uma camada Wayland independente.
+12. **Kernel**: se uma atualização mudar o comportamento de `hidraw`/`wacom`,
+    a regra udev e o grab podem precisar de revisão. O fallback é parar o
+    `wacomd`: os grabs são liberados e o driver do kernel volta a atender a
+    mesa.
 
 ---
 

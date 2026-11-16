@@ -2,11 +2,10 @@
 
 use std::io::BufReader;
 use std::os::unix::net::UnixStream;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use wacom_proto::config::Config;
 use wacom_proto::ipc::{
     read_message, socket_path, write_message, Event, Request, PROTOCOL_VERSION,
 };
@@ -14,12 +13,24 @@ use wacom_proto::ipc::{
 #[allow(clippy::large_enum_variant)] // Mirrors the daemon Event enum.
 pub enum UiEvent {
     Event(Event),
+    Error(String),
     Disconnected(String),
 }
 
-pub fn spawn_reader() -> Receiver<UiEvent> {
+/// Start the subscriber reader and the serialized request worker.
+/// Returns (command sender, UI event receiver). The UI thread never blocks on
+/// a socket request, so a slow/restarting daemon cannot freeze the window.
+pub fn spawn() -> (Sender<Request>, Receiver<UiEvent>) {
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || loop {
+    let reader_tx = tx.clone();
+    thread::spawn(move || reader_loop(reader_tx));
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    thread::spawn(move || worker_loop(cmd_rx, tx));
+    (cmd_tx, rx)
+}
+
+fn reader_loop(tx: Sender<UiEvent>) {
+    loop {
         match connect() {
             Ok((mut writer, mut reader)) => {
                 let _ = write_message(&mut writer, &Request::Status);
@@ -48,8 +59,20 @@ pub fn spawn_reader() -> Receiver<UiEvent> {
             }
         }
         thread::sleep(Duration::from_secs(2));
-    });
-    rx
+    }
+}
+
+fn worker_loop(rx: Receiver<Request>, tx: Sender<UiEvent>) {
+    while let Ok(req) = rx.recv() {
+        let event = match request(req) {
+            Ok(Event::Error { message }) => UiEvent::Error(message),
+            Ok(event) => UiEvent::Event(event),
+            Err(e) => UiEvent::Error(e),
+        };
+        if tx.send(event).is_err() {
+            return;
+        }
+    }
 }
 
 type Conn = (UnixStream, BufReader<UnixStream>);
@@ -76,26 +99,5 @@ pub fn request(request: Request) -> Result<Event, String> {
             Some(event) => return Ok(event),
             None => return Err("daemon closed the connection".into()),
         }
-    }
-}
-
-pub fn set_config(config: Config) -> Result<Config, String> {
-    match request(Request::SetConfig(config))? {
-        Event::Config(cfg) => Ok(cfg),
-        _ => Err("unexpected response to SetConfig".into()),
-    }
-}
-
-pub fn pin_profile(app: Option<String>) -> Result<(), String> {
-    match request(Request::PinProfile(app))? {
-        Event::Ack => Ok(()),
-        _ => Err("unexpected response to PinProfile".into()),
-    }
-}
-
-pub fn run_action(action: wacom_proto::config::Action) -> Result<(), String> {
-    match request(Request::RunAction(action))? {
-        Event::Ack => Ok(()),
-        _ => Err("unexpected response to RunAction".into()),
     }
 }

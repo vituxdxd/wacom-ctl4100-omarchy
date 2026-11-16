@@ -1,0 +1,12 @@
+# CTL-4100: unbind the in-kernel wacom driver so wacomd is the only consumer.
+# hidraw stays available even with no HID driver bound.
+ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:0374.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
+ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:0376.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
+ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:03C5.*", RUN+="/bin/sh -c 'test -e /sys/bus/hid/drivers/wacom/%k && echo -n %k > /sys/bus/hid/drivers/wacom/unbind'"
+
+# Read/write access for the daemon (report descriptor + feature reports).
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="037[467]", MODE="0660", GROUP="input", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="03c[56]", MODE="0660", GROUP="input", TAG+="uaccess"
+
+# Virtual stylus / macro devices.
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

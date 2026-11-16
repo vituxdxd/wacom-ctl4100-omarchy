@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/wacom-proto", "crates/wacomd", "crates/wacomctl", "crates/wacom-gui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Vitor"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+hidapi = { version = "2", default-features = false, features = ["linux-shared-hidraw"] }
+evdev = "0.13"
+eframe = { version = "0.32", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.32"

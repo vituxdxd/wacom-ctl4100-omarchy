@@ -1,0 +1,7 @@
+/target
+/re-workspace
+*.log
+packaging/src
+packaging/pkg
+packaging/*.tar.*
+packaging/*.pkg.tar.*

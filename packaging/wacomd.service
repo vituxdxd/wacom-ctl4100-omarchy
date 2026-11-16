@@ -1,0 +1,16 @@
+[Unit]
+Description=Wacom Intuos S (CTL-4100) userspace driver
+Documentation=file:/usr/share/doc/wacom-ctl4100/README.md
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wacomd
+Restart=on-failure
+RestartSec=2
+# uinput and hidraw access come from 99-wacom-ctl4100.rules; the user must be
+# in the `input` group.
+
+[Install]
+WantedBy=graphical-session.target

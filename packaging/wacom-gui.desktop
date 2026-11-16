@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Wacom Tablet
+Comment=Configure the Wacom Intuos S (CTL-4100)
+Exec=wacom-gui
+Icon=input-tablet
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=wacom;tablet;pen;intuos;ctl-4100;
+StartupNotify=true

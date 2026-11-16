@@ -9,8 +9,7 @@ Type=simple
 ExecStart=/usr/bin/wacomd
 Restart=on-failure
 RestartSec=2
-# uinput and hidraw access come from 99-wacom-ctl4100.rules; the user must be
-# in the `input` group.
+# uinput and hidraw access come from 70-wacom-ctl4100.rules; uaccess grants the session user access.
 
 [Install]
 WantedBy=graphical-session.target

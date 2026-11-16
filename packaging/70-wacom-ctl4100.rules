@@ -8,5 +8,6 @@ ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0003:056A:03C5.*", RUN+="/bin/sh -c 't
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="037[467]", MODE="0660", GROUP="input", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="056a", ATTRS{idProduct}=="03c[56]", MODE="0660", GROUP="input", TAG+="uaccess"
 
-# Virtual stylus / macro devices.
-KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"
+# Virtual stylus / macro devices. uaccess gives the logged-in seat user an ACL,
+# so no `input` group membership or re-login is required.
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", TAG+="uaccess", OPTIONS+="static_node=uinput"

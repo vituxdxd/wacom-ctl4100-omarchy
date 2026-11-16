@@ -5,7 +5,7 @@
 #
 pkgname=wacom-ctl4100
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Native userspace driver and companion app for the Wacom Intuos S (CTL-4100)"
 arch=('x86_64' 'aarch64')
 url="https://example.invalid/wacom-ctl4100-omarchy"
@@ -27,8 +27,8 @@ package() {
   install -Dm755 target/release/wacomctl "$pkgdir/usr/bin/wacomctl"
   install -Dm755 target/release/wacom-gui "$pkgdir/usr/bin/wacom-gui"
 
-  install -Dm644 packaging/99-wacom-ctl4100.rules \
-    "$pkgdir/usr/lib/udev/rules.d/99-wacom-ctl4100.rules"
+  install -Dm644 packaging/70-wacom-ctl4100.rules \
+    "$pkgdir/usr/lib/udev/rules.d/70-wacom-ctl4100.rules"
   install -Dm644 packaging/wacomd.service \
     "$pkgdir/usr/lib/systemd/user/wacomd.service"
   install -Dm644 packaging/wacom-gui.desktop \

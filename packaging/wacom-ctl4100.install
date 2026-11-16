@@ -2,15 +2,19 @@ post_install() {
   cat <<'EOF'
 Wacom CTL-4100 userspace driver installed.
 
-Required once:
-  sudo usermod -aG input "$USER"
-  (log out and back in so the new group applies)
+The udev rule grants this session access via uaccess, so normally no extra
+group membership is needed.
 
-Then enable the daemon:
+Enable the daemon:
+  sudo modprobe uinput
   systemctl --user enable --now wacomd
 
-The udev rule unbinds the in-kernel `wacom` driver for this tablet so pen
-events are not duplicated. Reconnect the tablet after installation.
+The udev rule unbinds the in-kernel `wacom` driver for this tablet only, so
+pen events are not duplicated. Plug the tablet after installation.
+
+If wacomd reports permission denied on /dev/uinput or /dev/hidraw*:
+  sudo usermod -aG input "$USER"
+then log out and back in.
 EOF
   udevadm control --reload-rules 2>/dev/null || true
   udevadm trigger --subsystem-match=hid 2>/dev/null || true

@@ -33,17 +33,17 @@ que é implementação nossa (curvas preset, matemática de mapeamento).
 ## Instalação (Arch / Omarchy)
 
 ```bash
-# 1. grupo de acesso a hidraw/uinput
-sudo usermod -aG input "$USER"     # depois saia e entre na sessão
-
-# 2. instalar
+# 1. instalar (a regra udev usa uaccess; não é preciso entrar no grupo input)
 cd packaging
 makepkg -si
 
-# 3. driver uinput + daemon na sessão
+# 2. driver uinput + daemon na sessão
 sudo modprobe uinput
 systemctl --user enable --now wacomd
 ```
+
+Se o `wacomd` reclamar de permissão em `/dev/uinput` ou no hidraw, aí sim:
+`sudo usermod -aG input "$USER"` e saia/entre na sessão.
 
 O pacote instala a regra udev que dá acesso ao hidraw e **desvincula** o driver
 `wacom` do kernel apenas para esta mesa (evita eventos duplicados). O driver do

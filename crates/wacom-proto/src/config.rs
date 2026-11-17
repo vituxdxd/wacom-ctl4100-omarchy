@@ -87,6 +87,11 @@ pub struct PenConfig {
     /// Screen pixels within which a second tap is snapped to the first one.
     pub double_click_distance: f32,
     pub double_click_time_ms: u64,
+    /// Emit an absolute pointer (tip = left click) instead of the tablet
+    /// protocol. For apps whose toolkit has no tablet support (winit/egui):
+    /// the compositor only sends them pointer events, so a tablet pen moves
+    /// the cursor but never presses. Native buttons are not passed through.
+    pub pointer_mode: bool,
 }
 
 impl Default for PenConfig {
@@ -99,6 +104,7 @@ impl Default for PenConfig {
             custom_curve: None,
             double_click_distance: 10.0,
             double_click_time_ms: 400,
+            pointer_mode: false,
         }
     }
 }
@@ -302,6 +308,33 @@ mod tests {
         );
         let back: Action = serde_json::from_str(&json).unwrap();
         assert_eq!(a, back);
+    }
+
+    #[test]
+    fn pointer_mode_is_off_by_default_and_survives_a_round_trip() {
+        assert!(!PenConfig::default().pointer_mode);
+        // Configs written before the field existed still load.
+        let old: Config = serde_json::from_str(r#"{"version":1}"#).unwrap();
+        assert!(!old.pen.pointer_mode);
+
+        let mut c = Config::default();
+        c.profiles.insert(
+            "ai.storyteller.pdfcraft".into(),
+            Profile {
+                pen: Some(PenConfig {
+                    pointer_mode: true,
+                    ..PenConfig::default()
+                }),
+                ..Profile::default()
+            },
+        );
+        let back: Config = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back, c);
+        assert!(
+            back.effective(Some("ai.storyteller.pdfcraft"))
+                .pen
+                .pointer_mode
+        );
     }
 
     #[test]

@@ -34,6 +34,7 @@ pub struct Driver {
     serial: Option<String>,
     mode: DeviceMode,
     stylus: VirtualDevice,
+    pointer: VirtualDevice,
     runner: ActionRunner,
     shared: Arc<Shared>,
     cmd_rx: Receiver<Command>,
@@ -109,6 +110,7 @@ impl Driver {
         let lut = CurveLut::new(&effective.pen.curve());
         let mapping = build_mapping(&effective, &monitors, layout);
         let stylus = build_stylus()?;
+        let pointer = build_pointer()?;
         let runner = ActionRunner::new()?;
         Ok(Self {
             api,
@@ -117,6 +119,7 @@ impl Driver {
             serial: None,
             mode: DeviceMode::Unknown,
             stylus,
+            pointer,
             runner,
             shared,
             cmd_rx,
@@ -294,6 +297,8 @@ impl Driver {
     }
 
     fn apply_effective(&mut self) {
+        // Release anything held with the old mode before switching devices.
+        self.leave_proximity();
         self.effective = self.base.effective(self.app_class.as_deref());
         self.mapping = build_mapping(&self.effective, &self.monitors, self.layout);
         self.lut = CurveLut::new(&self.effective.pen.curve());
@@ -380,27 +385,38 @@ impl Driver {
         let pressure = self.lut.eval(p.pressure);
         self.telemetry.pressure = pressure;
 
+        let pointer_mode = self.effective.pen.pointer_mode;
         let mut events = Vec::with_capacity(12);
-        let eraser = p.eraser();
-        if eraser != self.pen.tool_rubber {
-            events.push(key_event(KeyCode::BTN_TOOL_RUBBER, eraser));
-            self.pen.tool_rubber = eraser;
-        }
-        let pen_tool = !eraser;
-        if pen_tool != self.pen.tool_pen {
-            events.push(key_event(KeyCode::BTN_TOOL_PEN, pen_tool));
-            self.pen.tool_pen = pen_tool;
-        }
-        self.pen.in_range = true;
-        events.push(abs_event(AbsoluteAxisCode::ABS_X, i32::from(ux)));
-        events.push(abs_event(AbsoluteAxisCode::ABS_Y, i32::from(uy)));
-        events.push(abs_event(
-            AbsoluteAxisCode::ABS_PRESSURE,
-            i32::from(pressure.min(PRESSURE_MAX)),
-        ));
-        if p.tip() != self.pen.tip {
-            events.push(key_event(KeyCode::BTN_TOUCH, p.tip()));
-            self.pen.tip = p.tip();
+        if pointer_mode {
+            self.pen.in_range = true;
+            events.push(abs_event(AbsoluteAxisCode::ABS_X, i32::from(ux)));
+            events.push(abs_event(AbsoluteAxisCode::ABS_Y, i32::from(uy)));
+            if p.tip() != self.pen.tip {
+                events.push(key_event(KeyCode::BTN_LEFT, p.tip()));
+                self.pen.tip = p.tip();
+            }
+        } else {
+            let eraser = p.eraser();
+            if eraser != self.pen.tool_rubber {
+                events.push(key_event(KeyCode::BTN_TOOL_RUBBER, eraser));
+                self.pen.tool_rubber = eraser;
+            }
+            let pen_tool = !eraser;
+            if pen_tool != self.pen.tool_pen {
+                events.push(key_event(KeyCode::BTN_TOOL_PEN, pen_tool));
+                self.pen.tool_pen = pen_tool;
+            }
+            self.pen.in_range = true;
+            events.push(abs_event(AbsoluteAxisCode::ABS_X, i32::from(ux)));
+            events.push(abs_event(AbsoluteAxisCode::ABS_Y, i32::from(uy)));
+            events.push(abs_event(
+                AbsoluteAxisCode::ABS_PRESSURE,
+                i32::from(pressure.min(PRESSURE_MAX)),
+            ));
+            if p.tip() != self.pen.tip {
+                events.push(key_event(KeyCode::BTN_TOUCH, p.tip()));
+                self.pen.tip = p.tip();
+            }
         }
 
         let mut actions = Vec::new();
@@ -408,6 +424,7 @@ impl Driver {
             p.barrel(),
             self.effective.pen.button1.clone(),
             KeyCode::BTN_STYLUS,
+            !pointer_mode,
             &mut events,
             &mut actions,
         );
@@ -415,12 +432,17 @@ impl Driver {
             p.barrel2(),
             self.effective.pen.button2.clone(),
             KeyCode::BTN_STYLUS2,
+            !pointer_mode,
             &mut events,
             &mut actions,
         );
 
         if !events.is_empty() {
-            self.emit_stylus(&events);
+            if pointer_mode {
+                self.emit_pointer(&events);
+            } else {
+                self.emit_stylus(&events);
+            }
         }
         for action in actions {
             self.run_action(action);
@@ -434,6 +456,7 @@ impl Driver {
         pressed: bool,
         action: Action,
         code: KeyCode,
+        emit_native: bool,
         events: &mut Vec<InputEvent>,
         actions: &mut Vec<Action>,
     ) {
@@ -456,7 +479,9 @@ impl Driver {
             _ => self.pen.native_stylus2,
         };
         if target != emitted {
-            events.push(key_event(code, target));
+            if emit_native {
+                events.push(key_event(code, target));
+            }
             match code {
                 KeyCode::BTN_STYLUS => self.pen.native_stylus = target,
                 _ => self.pen.native_stylus2 = target,
@@ -584,6 +609,22 @@ impl Driver {
     }
 
     fn leave_proximity(&mut self) {
+        if self.effective.pen.pointer_mode {
+            if !self.pen.in_range && !self.pen.tip {
+                return;
+            }
+            if self.pen.tip {
+                self.emit_pointer(&[key_event(KeyCode::BTN_LEFT, false)]);
+            }
+            self.pen = PenState::default();
+            self.last_emitted = None;
+            self.telemetry.tip = false;
+            self.telemetry.barrel = false;
+            self.telemetry.barrel2 = false;
+            self.telemetry.in_range = false;
+            self.telemetry.pressure = 0;
+            return;
+        }
         if !self.pen.in_range && !self.pen.tool_pen && !self.pen.tool_rubber {
             return;
         }
@@ -625,6 +666,12 @@ impl Driver {
     fn emit_stylus(&mut self, events: &[InputEvent]) {
         if let Err(e) = self.stylus.emit(events) {
             eprintln!("wacomd: stylus emit failed: {e}");
+        }
+    }
+
+    fn emit_pointer(&mut self, events: &[InputEvent]) {
+        if let Err(e) = self.pointer.emit(events) {
+            eprintln!("wacomd: pointer emit failed: {e}");
         }
     }
 
@@ -685,6 +732,27 @@ fn build_mapping(effective: &EffectiveConfig, monitors: &[Monitor], layout: Pixe
         orientation: effective.mapping.orientation,
         force_proportions: effective.mapping.force_proportions,
     }
+}
+
+/// Absolute pointer used by profiles with `pointer_mode`: toolkits without
+/// tablet support (winit/egui) only ever see pointer events.
+fn build_pointer() -> io::Result<VirtualDevice> {
+    let mut keys = AttributeSet::<KeyCode>::new();
+    keys.insert(KeyCode::BTN_LEFT);
+    let mut builder = VirtualDevice::builder()?
+        .name("CTL-4100 Userspace Pointer")
+        .input_id(InputId::new(BusType::BUS_VIRTUAL, 0x1209, 0x0003, 1))
+        .with_keys(&keys)?;
+    for code in [AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y] {
+        let resolution = if code == AbsoluteAxisCode::ABS_X {
+            216
+        } else {
+            345
+        };
+        let info = AbsInfo::new(0, 0, 32_767, 0, 0, resolution);
+        builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
+    }
+    builder.build()
 }
 
 fn build_stylus() -> io::Result<VirtualDevice> {

@@ -1,19 +1,20 @@
-# 0002 — Usar o Report `0x10` estruturado, não o stream `0xAC`
+# 0002 — Use the structured Report `0x10`, not the `0xAC` stream
 
-## Contexto
+## Context
 
-O driver macOS lê o relatório USB de 27 bytes como sub-relatórios de 8 bytes
-(`TranslateShortEMR`) e também tem um caminho de stream vendor `0xAC` de 191
-bytes. O descritor HID, por outro lado, define campos claros para o Report
-`0x10`: X/Y de 24 bits, pressão de 16 bits, flags de ponta/botões.
+The macOS driver reads the 27-byte USB report as 8-byte sub-reports
+(`TranslateShortEMR`) and also has a 191-byte vendor stream path `0xAC`. The
+HID descriptor, on the other hand, defines clear fields for Report `0x10`:
+24-bit X/Y, 16-bit pressure, tip/button flags.
 
-## Decisão
+## Decision
 
-Parsear o Report `0x10` conforme o descritor. O `0xAC` e o caminho de 8 bytes
-ficam documentados, mas não implementados.
+Parse Report `0x10` according to the descriptor. `0xAC` and the 8-byte path
+stay documented but unimplemented.
 
-## Consequências
+## Consequences
 
-- O parser é simples, testável e igual ao que o driver `wacom` do Linux usa.
-- Perdemos qualquer informação que só exista no stream raw (se houver).
-- Se um firmware futuro só enviar `0xAC`, será preciso um segundo parser.
+- The parser is simple, testable and identical to what the Linux `wacom`
+  driver uses.
+- We lose any information that exists only in the raw stream (if any).
+- If a future firmware only sends `0xAC`, a second parser will be needed.

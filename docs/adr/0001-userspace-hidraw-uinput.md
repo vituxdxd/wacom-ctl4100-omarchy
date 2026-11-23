@@ -1,28 +1,28 @@
-# 0001 — Driver de espaço de usuário em vez de driver de kernel
+# 0001 — Userspace driver instead of a kernel driver
 
-## Contexto
+## Context
 
-A CTL-4100 já é atendida pelo driver `wacom` do kernel Linux, mas queremos
-perfis por aplicativo, mapeamento por monitor, remapeamento das ExpressKeys e
-uma GUI — coisas que o driver do kernel não expõe. Escrever um módulo de kernel
-torna qualquer bug um risco de tela azul e dificulta o desenvolvimento.
+The CTL-4100 is already handled by the Linux kernel `wacom` driver, but we
+want per-application profiles, per-monitor mapping, ExpressKey remapping and a
+GUI — things the kernel driver does not expose. Writing a kernel module turns
+any bug into a blue-screen risk and makes development harder.
 
-## Decisão
+## Decision
 
-Ler o hidraw e criar dispositivos virtuais via `/dev/uinput`. O driver
-`wacom` do kernel permanece ligado (neste kernel o hidraw desaparece quando o
-driver HID é desvinculado). O kernel também é dono da inicialização: reenviar
-`02 02`/`0D 00` pelo hidraw pode pausar o stream, então o daemon é passivo. Ele
-dá `EVIOCGRAB` nos eventos evdev do kernel para não entregar a caneta duas
-vezes.
+Read hidraw and create virtual devices through `/dev/uinput`. The kernel
+`wacom` driver stays bound (on this kernel the hidraw node disappears when the
+HID driver is unbound). The kernel also owns initialization: resending
+`02 02`/`0D 00` over hidraw can pause the stream, so the daemon is passive. It
+issues `EVIOCGRAB` on the kernel evdev nodes so the pen is not delivered
+twice.
 
-## Consequências
+## Consequences
 
-- O daemon roda como usuário (grupo `input`), sem root.
-- Precisamos reimplementar init, parsing e mapeamento — e assumir o custo de
-  manter isso.
-- Outras mesas Wacom continuam usando o driver do kernel.
-- Sem o `EVIOCGRAB`, há eventos duplicados; o grab é liberado ao parar o
-  daemon, devolvendo o controle ao driver do kernel.
-- O grab exige acesso de leitura aos `/dev/input/event*`; a regra udev usa
-  `uaccess` para isso.
+- The daemon runs as a user (group `input`), without root.
+- We must reimplement init, parsing and mapping — and take on the maintenance
+  cost.
+- Other Wacom tablets keep using the kernel driver.
+- Without `EVIOCGRAB` there are duplicate events; the grab is released when
+  the daemon stops, returning control to the kernel driver.
+- The grab requires read access to `/dev/input/event*`; the udev rule uses
+  `uaccess` for that.

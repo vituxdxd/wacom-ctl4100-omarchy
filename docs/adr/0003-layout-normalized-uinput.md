@@ -1,21 +1,21 @@
-# 0003 — Coordenadas do uinput normalizadas no layout
+# 0003 — uinput coordinates normalized to the layout
 
-## Contexto
+## Context
 
-O Hyprland mapeia dispositivos de mesa para o layout inteiro ou para um monitor
-(`input:tablet:output`). Se emitíssemos coordenadas nativas (0…15200), o
-mapeamento para um monitor específico dependeria dessa configuração global.
+Hyprland maps tablet devices to the whole layout or to a single monitor
+(`input:tablet:output`). If we emitted native coordinates (0…15200), mapping to
+a specific monitor would depend on that global setting.
 
-## Decisão
+## Decision
 
-Emitir `ABS_X`/`ABS_Y` em `0…32767`, correspondendo ao layout inteiro, e fazer
-no daemon a seleção de monitor, área ativa, rotação e proporções. O daemon
-assume que `input:tablet:output` está vazio.
+Emit `ABS_X`/`ABS_Y` in `0…32767`, corresponding to the whole layout, and do
+monitor selection, active area, rotation and proportions in the daemon. The
+daemon assumes `input:tablet:output` is empty.
 
-## Consequências
+## Consequences
 
-- Um único dispositivo funciona em qualquer arranjo de monitores.
-- O libinput exige resolução não-zero nos eixos X/Y para aceitar o tablet;
-  declaramos 216/345 para que ele reporte 152 × 95 mm.
-- Se o usuário configurar `input:tablet:output`, o compositor reescala e o
-  mapeamento fica relativo — por isso o README pede para deixar vazio.
+- A single device works on any monitor arrangement.
+- libinput requires non-zero resolution on the X/Y axes to accept the tablet;
+  we declare 216/345 so it reports 152 × 95 mm.
+- If the user sets `input:tablet:output`, the compositor rescales and the
+  mapping becomes relative — that is why the README asks for it to be empty.

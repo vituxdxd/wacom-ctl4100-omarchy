@@ -1,57 +1,56 @@
-# Glossário
+# Glossary
 
-**Mesa (tablet)** — a superfície física da CTL-4100; 152 × 95 mm ativos.
+**Tablet** — the physical surface of the CTL-4100; 152 × 95 mm active.
 
-**Espaço da mesa (tablet space)** — coordenadas nativas do firmware, X em
-0…15200 e Y em 0…9500, com 100 unidades por milímetro.
+**Tablet space** — native firmware coordinates, X in 0…15200 and Y in
+0…9500, with 100 units per millimeter.
 
-**Espaço da tela (layout space)** — pixels lógicos do arranjo de monitores do
-Hyprland; a origem pode ser negativa.
+**Layout space** — logical pixels of the Hyprland monitor arrangement; the
+origin can be negative.
 
-**Área ativa (active area)** — sub-retângulo da mesa que gera coordenadas;
-expressa em fração 0…1 da mesa.
+**Active area** — sub-rectangle of the tablet that produces coordinates;
+expressed as a 0…1 fraction of the tablet.
 
-**Destino (screen target)** — retângulo do layout para onde a mesa é mapeada:
-o layout inteiro ou um monitor.
+**Screen target** — the layout rectangle the tablet is mapped to: the whole
+layout or a single monitor.
 
-**Forçar proporções (force proportions)** — manter a razão de aspecto física
-da área ativa dentro do destino, centralizando o resultado.
+**Force proportions** — keep the physical aspect ratio of the active area
+inside the target, centering the result.
 
-**Orientação** — rotação aplicada à mesa antes da projeção: 0°, 90°, 180° ou
-270° no sentido horário.
+**Orientation** — rotation applied to the tablet before projection: 0°, 90°,
+180° or 270° clockwise.
 
-**Tip feel** — posição da curva de pressão entre "soft" (pouca força chega ao
-máximo) e "firm" (é preciso mais força).
+**Tip feel** — position of the pressure curve between "soft" (little force
+reaches the maximum) and "firm" (more force is needed).
 
-**Curva de pressão** — função que converte pressão crua (0…4095) em pressão
-reportada, implementada como Bézier cúbica amostrada em uma tabela.
+**Pressure curve** — function that converts raw pressure (0…4095) into
+reported pressure, implemented as a cubic Bézier sampled into a table.
 
-**Relatório de caneta** — input report HID `0x10`, com posição, pressão, botões
-e estado de proximidade.
+**Pen report** — HID input report `0x10`, with position, pressure, buttons
+and proximity state.
 
-**Relatório de pad** — input report HID `0x11`, com o bitmask das quatro
+**Pad report** — HID input report `0x11`, with the bitmask of the four
 ExpressKeys.
 
-**Wacom mode** — estado do firmware em que ele envia os relatórios proprietários
-`0x10`/`0x11`; oposto de **HID mode** (modo mouse genérico).
+**Wacom mode** — firmware state in which it sends the proprietary
+`0x10`/`0x11` reports; the opposite of **HID mode** (generic mouse mode).
 
-**ExpressKey** — uma das quatro teclas físicas no topo da mesa, rotuladas
-A–D no sentido esquerda→direita.
+**ExpressKey** — one of the four physical keys on top of the tablet, labeled
+A–D from left to right.
 
-**Ação** — comportamento atribuído a uma ExpressKey ou botão da caneta:
-tecla, clique, scroll, modo precisão, troca de monitor, menu radial ou shell.
+**Action** — behavior assigned to an ExpressKey or pen button: key, click,
+scroll, precision mode, monitor switch, radial menu or shell.
 
-**Perfil** — conjunto de overrides de caneta, ExpressKeys e mapeamento
-associado a uma classe de aplicativo do Hyprland; o perfil global é a base.
+**Profile** — set of pen, ExpressKeys and mapping overrides associated with a
+Hyprland application class; the global profile is the base.
 
-**Modo precisão** — reduz o deslocamento do cursor a uma fração do movimento
-físico, relativo à última posição emitida.
+**Precision mode** — reduces cursor displacement to a fraction of physical
+movement, relative to the last emitted position.
 
-**Pan/Scroll** — modo em que o movimento da caneta gera roda vertical/horizontal
-em vez de mover o cursor.
+**Pan/Scroll** — mode in which pen movement generates a vertical/horizontal
+wheel instead of moving the cursor.
 
-**Menu radial** — sobreposição com ações circulares, invocada por uma ação
-mapeada.
+**Radial menu** — overlay with circular actions, invoked by a mapped action.
 
-**Telemetria** — amostra ao vivo do estado decodificado (X, Y, pressão, botões,
-taxa de pacotes) publicada pelo daemon via IPC.
+**Telemetry** — live sample of the decoded state (X, Y, pressure, buttons,
+packet rate) published by the daemon over IPC.

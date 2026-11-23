@@ -1,114 +1,114 @@
 # wacom-ctl4100-omarchy
 
-Driver de espaço de usuário e software companheiro, em Rust, para a mesa
-digitalizadora **Wacom Intuos S (CTL-4100)** em Arch Linux / Omarchy
-(Wayland / Hyprland).
+Userspace driver and companion software, written in Rust, for the **Wacom
+Intuos S (CTL-4100)** drawing tablet on Arch Linux / Omarchy (Wayland /
+Hyprland).
 
-O protocolo foi reconstruído a partir do instalador oficial macOS
-`WacomTablet_6.4.15-2.dmg` (engenharia reversa documentada em
-[`docs/RE_REPORT_CTL4100.md`](docs/RE_REPORT_CTL4100.md)) e conferido contra o
-descritor HID de hardware real.
+The protocol was reconstructed from the official macOS installer
+`WacomTablet_6.4.15-2.dmg` (reverse engineering documented in
+[`docs/RE_REPORT_CTL4100.md`](docs/RE_REPORT_CTL4100.md)) and checked against
+the HID descriptor of real hardware.
 
-## Estado
+## Status
 
-- `wacomd` — daemon: hidraw → `/dev/uinput`, perfis por app (Hyprland), IPC.
-- `wacomctl` — CLI: status, configuração, perfis, telemetria.
-- `wacom-gui` — app egui: caneta, ExpressKeys, mapeamento e diagnóstico.
-- `wacom-proto` — parser HID, curvas de pressão, transformação afim, config.
+- `wacomd` — daemon: hidraw → `/dev/uinput`, per-app profiles (Hyprland), IPC.
+- `wacomctl` — CLI: status, configuration, profiles, telemetry.
+- `wacom-gui` — egui app: pen, ExpressKeys, mapping and diagnostics.
+- `wacom-proto` — HID parser, pressure curves, affine transform, config.
 
-**Testado em hardware real em 2026-11-16** (CTL-4100 USB `056a:0374`):
-ponteiro, pressão, botões laterais e as 4 ExpressKeys funcionando. O teste
-revelou e corrigiu três detalhes que não aparecem no binário macOS: o bit de
-in-range é `0x40` (não `0x20`), o libinput exige resolução não-zero nos eixos
-do tablet virtual, e o hidraw morre se o driver `wacom` do kernel for
-desvinculado — por isso o daemon mantém o kernel ligado e usa `EVIOCGRAB`.
-O relatório separa o que foi observado do que é implementação nossa (presets
-de curva, matemática de mapeamento).
+**Tested on real hardware on 2026-11-16** (CTL-4100 USB `056a:0374`): pointer,
+pressure, side buttons and all 4 ExpressKeys working. The test uncovered and
+fixed three details that do not show up in the macOS binary: the in-range bit
+is `0x40` (not `0x20`), libinput requires non-zero resolution on the virtual
+tablet axes, and the hidraw node disappears if the kernel `wacom` driver is
+unbound — so the daemon keeps the kernel driver bound and uses `EVIOCGRAB`.
+The report separates what was observed from what is our own implementation
+(curve presets, mapping math).
 
-## Hardware suportado
+## Supported hardware
 
-| Modelo | USB | Bluetooth |
+| Model | USB | Bluetooth |
 | --- | --- | --- |
 | CTL-4100 | `056a:0374` | — |
 | CTL-4100WL | `056a:0376`, `056a:03c5` | `056a:0377`, `056a:03c6` |
 
-Área ativa: 152 × 95 mm, 2540 lpi (100 unidades/mm), 4096 níveis de pressão,
-4 ExpressKeys (A–D), caneta LP-1100K com 2 botões laterais.
+Active area: 152 × 95 mm, 2540 lpi (100 units/mm), 4096 pressure levels,
+4 ExpressKeys (A–D), LP-1100K pen with 2 side buttons.
 
-## Instalação (Arch / Omarchy)
+## Installation (Arch / Omarchy)
 
 ```bash
-# 1. instalar (a regra udev usa uaccess; não é preciso entrar no grupo input)
+# 1. install (the udev rule uses uaccess; no input group needed)
 cd packaging
 makepkg -si
 
-# 2. driver uinput + daemon na sessão
+# 2. uinput driver + daemon in the session
 sudo modprobe uinput
 systemctl --user enable --now wacomd
 ```
 
-Se o `wacomd` reclamar de permissão em `/dev/uinput` ou no hidraw, aí sim:
-`sudo usermod -aG input "$USER"` e saia/entre na sessão.
+If `wacomd` complains about permissions on `/dev/uinput` or the hidraw node,
+then: `sudo usermod -aG input "$USER"` and log out and back in.
 
-O `wacomd` mantém o driver `wacom` do kernel ligado (o hidraw só existe
-enquanto um driver HID está vinculado). A inicialização (`02 02`, modo Wacom,
-taxa de pacotes) é feita pelo driver do kernel; o daemon **não envia feature
-reports** para não pausar o stream. Ele lê o hidraw e dá **EVIOCGRAB** nos nós
-evdev dessa mesa. Assim a caneta não gera eventos duplicados.
-Ao parar o daemon, os grabs são liberados e o driver do kernel volta a
-funcionar sozinho.
+`wacomd` keeps the kernel `wacom` driver bound (the hidraw node only exists
+while a HID driver is bound). Initialization (`02 02`, Wacom mode, packet
+rate) is done by the kernel driver; the daemon **sends no feature reports** so
+it does not pause the stream. It reads hidraw and issues **EVIOCGRAB** on this
+tablet's evdev nodes. That way the pen does not produce duplicate events.
+When the daemon stops, the grabs are released and the kernel driver works on
+its own again.
 
-O stylus virtual se identifica como `1209:0001` (`CTL-4100 Userspace Pen`) e
-declara os eixos com resolução de 216/345 unidades (152 × 95 mm sobre
-`0..32767`); sem resolução não-zero o libinput ignora o tablet. O `wacom-gui`
-usa IPC assíncrono, então salvar configuração ou trocar perfil não congela a
-janela.
+The virtual stylus identifies as `1209:0001` (`CTL-4100 Userspace Pen`) and
+declares the axes with a resolution of 216/345 units (152 × 95 mm over
+`0..32767`); without non-zero resolution libinput ignores the tablet. The
+`wacom-gui` uses asynchronous IPC, so saving configuration or switching
+profiles does not freeze the window.
 
-> Se você tiver `input:tablet:output` configurado no Hyprland, deixe-o vazio
-> (`input:tablet:output =`). O `wacomd` faz o mapeamento por conta própria e
-> espera que o Hyprland distribua o dispositivo pelo layout inteiro.
+> If you have `input:tablet:output` configured in Hyprland, leave it empty
+> (`input:tablet:output =`). `wacomd` does the mapping itself and expects
+> Hyprland to spread the device across the whole layout.
 
-## Uso
+## Usage
 
 ```bash
 wacomctl status
-wacomctl listen                 # telemetria ao vivo
+wacomctl listen                 # live telemetry
 wacomctl set pressure 30        # 0 = soft, 100 = firm
 wacomctl set orientation 90
-wacomctl set area 0 0 1 1       # x y w h normalizados
+wacomctl set area 0 0 1 1       # x y w h normalized
 wacomctl set proportions on
-wacomctl set monitor DP-1       # ou "all"
+wacomctl set monitor DP-1       # or "all"
 wacomctl set action key1 '{"type":"key","value":{"mods":["ctrl"],"key":"z"}}'
-wacomctl use krita              # fixa o perfil; "wacomctl use --follow" volta
+wacomctl use krita              # pin the profile; "wacomctl use --follow" resumes
 wacomctl profile list
 wacomctl radial
 ```
 
-A GUI abre pelo menu do desktop (`Wacom Tablet`) ou por `wacom-gui`. Ela edita
-a mesma configuração do daemon em tempo real.
+The GUI opens from the desktop menu (`Wacom Tablet`) or via `wacom-gui`. It
+edits the daemon's configuration in real time.
 
-Configuração: `$XDG_CONFIG_HOME/wacom-ctl4100/config.json`
+Configuration: `$XDG_CONFIG_HOME/wacom-ctl4100/config.json`
 (`~/.config/wacom-ctl4100/config.json`).
 
-## Arquitetura
+## Architecture
 
 ```
 crates/
-  wacom-proto   parser HID + feature reports + curva + mapeamento + config + IPC
-  wacomd        hidapi -> uinput, Hyprland IPC, servidor Unix socket
-  wacomctl      clap + cliente IPC
+  wacom-proto   HID parser + feature reports + curve + mapping + config + IPC
+  wacomd        hidapi -> uinput, Hyprland IPC, Unix socket server
+  wacomctl      clap + IPC client
   wacom-gui     eframe/egui (Wayland, GPU)
 packaging/      udev, systemd --user, .desktop, PKGBUILD
-docs/           relatório de engenharia reversa
+docs/           reverse engineering report
 ```
 
-Fluxo: relatório HID `0x10` (caneta) / `0x11` (ExpressKeys) → `wacom-proto`
-decodifica → curva de pressão → mapeamento para pixels do layout → eixo
-absoluto normalizado 0..32767 no dispositivo virtual → libinput/Hyprland.
-As ExpressKeys executam `Action` (tecla, clique, scroll, modo precisão, troca de
-monitor, menu radial ou comando shell) em um teclado/mouse virtual separado.
+Flow: HID report `0x10` (pen) / `0x11` (ExpressKeys) → `wacom-proto`
+decodes → pressure curve → mapping to layout pixels → normalized absolute
+axis 0..32767 on the virtual device → libinput/Hyprland.
+ExpressKeys run an `Action` (key, click, scroll, precision mode, monitor
+switch, radial menu or shell command) on a separate virtual keyboard/mouse.
 
-## Verificação
+## Verification
 
 ```bash
 cargo check --workspace
@@ -116,16 +116,30 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## Limitações conhecidas
+## Known limitations
 
-- Testado em hardware; ver §7 do relatório para o que foi observado e o que
-  continua inferido.
-- A curva de pressão usa Bézier + LUT de 32 amostras, como o driver oficial,
-  mas os pontos exatos dos presets não foram recuperados.
-- Tilt é decodificado e exposto na telemetria, mas não emitido: a CTL-4100
-  (OAK) não reporta tilt no caminho interno do driver oficial.
-- A LP-1100K não tem borracha; o bit `0x36` é o in-range e não há bit de
-  eraser nos reports capturados.
-- Bluetooth (pacotes de 361 bytes) não é implementado; use o cabo USB.
-- O modo Pan/Scroll usa o movimento da caneta como roda e o toque como clique
-  esquerdo.
+- Tested on hardware; see §7 of the report for what was observed and what
+  remains inferred.
+- The pressure curve uses Bézier + a 32-sample LUT, like the official driver,
+  but the exact preset points were not recovered.
+- Tilt is decoded and exposed in telemetry but not emitted: the CTL-4100
+  (OAK) does not report tilt on the official driver's internal path.
+- The LP-1100K has no eraser; bit `0x36` is in-range and there is no eraser
+  bit in the captured reports.
+- Bluetooth (361-byte packets) is not implemented; use the USB cable.
+- Pan/Scroll mode uses pen movement as a wheel and the tip as a left click.
+
+## Legal
+
+This is an independent interoperability project. It is not affiliated with,
+endorsed by or supported by Wacom Co., Ltd. "Wacom" and "Intuos" are trademarks
+of Wacom Co., Ltd.
+
+No proprietary Wacom code, binaries or assets are included in this repository.
+The reverse engineering report contains only observed facts, symbol names and
+addresses needed for interoperability. The extracted vendor installer used
+during the research stays untracked (see `.gitignore`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

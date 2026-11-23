@@ -485,7 +485,7 @@ Decisions:
 ## 7. Limits, uncertainties and what was not verified
 
 1. **Hardware tested on 2026-11-16.** CTL-4100 USB `056a:0374`, serial
-   `0KH00R2105402`. The kernel `wacom` driver created `hidraw5` + event21/22;
+   `0KH00R…` (redacted). The kernel `wacom` driver created `hidraw5` + event21/22;
    the daemon opened hidraw and issued `EVIOCGRAB` on both evdev nodes. 1,496
    27-byte reports were captured. The test validated pointer, pressure, side
    buttons and the 4 ExpressKeys. Fixes that came from the test:

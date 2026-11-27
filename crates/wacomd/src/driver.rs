@@ -192,6 +192,13 @@ impl Driver {
 
     fn try_open(&mut self) {
         self.last_open_attempt = Instant::now();
+        // hidapi caches the device list from startup; without a refresh a
+        // tablet plugged in later never appears and a replug leaves a stale
+        // hidraw path behind.
+        if let Err(e) = self.api.refresh_devices() {
+            eprintln!("wacomd: hid enumeration failed: {e}");
+            return;
+        }
         let found = self
             .api
             .device_list()
@@ -222,6 +229,10 @@ impl Driver {
             self.product,
             info.product_id()
         );
+        // Grabs from a previous plug survive as dead fds, and the kernel reuses
+        // the same eventN paths, so drop them before grabbing the new nodes.
+        self.kernel_grabs.clear();
+        self.grabbed_paths.clear();
         self.device = Some(device);
         self.grab_kernel_inputs();
         self.publish();
@@ -230,6 +241,11 @@ impl Driver {
     /// Keep the kernel `wacom` driver bound (it owns the hidraw node) but take
     /// its evdev nodes exclusively so pen/pad events are not duplicated.
     fn grab_kernel_inputs(&mut self) {
+        // Never swallow kernel events while there is no device to replace
+        // them: an unopened tablet must keep working through the kernel.
+        if self.device.is_none() {
+            return;
+        }
         for (path, mut device) in evdev::enumerate() {
             let id = device.input_id();
             if id.vendor() != VENDOR_ID || !USB_PIDS.contains(&id.product()) {

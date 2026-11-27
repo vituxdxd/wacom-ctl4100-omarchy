@@ -5,7 +5,7 @@
 #
 pkgname=wacom-ctl4100
 pkgver=0.1.0
-pkgrel=13
+pkgrel=15
 pkgdesc="Native userspace driver and companion app for the Wacom Intuos S (CTL-4100)"
 arch=('x86_64' 'aarch64')
 url="https://github.com/vituxdxd/wacom-ctl4100-omarchy"
